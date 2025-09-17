@@ -94,6 +94,7 @@ globals:
     restore_value: no
     initial_value: '0'
 
+##############Tutaj ustawiamy zmienne do zapisu ostatniego stanu licznika do pamięci urządzenia
   # Izar
   - id: saved_izar_value
     type: float
@@ -133,7 +134,7 @@ binary_sensor:
       then:
         - lambda: |-
             id(active_index) += 1;
-            if (id(active_index) >= 3) id(active_index) = 0;
+            if (id(active_index) >= 3) id(active_index) = 0;          #############Tutaj ustawiamy ile jest liczników - w tym przypadku 3
             
 font:
   - file: 'Calibri-Regular.ttf'
@@ -171,22 +172,22 @@ wmbus_radio:
 
 #############################Tutaj ustawiamy liczniki###############################3
 wmbus_meter:
-  - id: water_meter_izar
+  - id: water_meter_izar                   ##### licznik 1
     meter_id: 0x414FDFAC
     type: izar
-  - id: water_meter_apator
+  - id: water_meter_apator                 ##### licznik 2
     meter_id: 0x07208205
     type: apator162
     key: "00000000000000000000000000000000"
-  - id: gas_meter_unismart
+  - id: gas_meter_unismart                 ##### licznik 3
     meter_id: 0x00062651
     type: unismart
     key: "00000000000000000000000000000000"
 
-###########################Tutaj ustawiamy sensory#####################################
+
 sensor:
 
-  - platform: adc
+  - platform: adc        #napięcie baterii
     pin: GPIO37
     id: battery_voltage
     name: "Napięcie baterii"
@@ -200,7 +201,7 @@ sensor:
           send_every: 2
       - multiply: 3.12
 
-  - platform: template
+  - platform: template      #poziom baterii w %
     name: "Poziom baterii"
     unit_of_measurement: "%"
     id: battery_percent
@@ -213,8 +214,8 @@ sensor:
       return (v - 3.0) / (4.2 - 3.0) * 100.0;
     accuracy_decimals: 0
 
-
-  - platform: wmbus_meter
+###########################Tutaj ustawiamy sensory liczników #####################################
+  - platform: wmbus_meter                  ###### licznik 1
     parent_id: water_meter_izar
     id: stan_licznik_izar
     field: total_m3
@@ -237,7 +238,7 @@ sensor:
     name: RSSI licznika wody Izar V5
     unit_of_measurement: "dBm"
 
-  - platform: wmbus_meter
+  - platform: wmbus_meter               ###### licznik 2
     parent_id: water_meter_apator
     id: stan_licznik_apator
     field: total_m3
@@ -260,7 +261,7 @@ sensor:
     name: RSSI licznika wody Apator V5
     unit_of_measurement: "dBm"
 
-  - platform: wmbus_meter
+  - platform: wmbus_meter        ###### licznik 3
     parent_id: gas_meter_unismart
     id: stan_licznik_unismart
     field: total_m3
@@ -283,7 +284,7 @@ sensor:
     name: RSSI licznika gazu Unismart V5
     unit_of_measurement: "dBm"
 
-#######################################################################################
+####################################WYŚWIETLACZ###################################################
 
 display:
   - platform: ssd1306_i2c
