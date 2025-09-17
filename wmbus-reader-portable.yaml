@@ -1,0 +1,357 @@
+esphome:
+  name: "wmbus-reader-v5-portable"
+  friendly_name: "WMBUS Reader V5 Portable"
+  on_boot:
+    priority: -100
+    then:
+      - output.turn_off: vext_output  #załączanie zasilania OLED
+      - delay: 100ms 
+      - globals.set:
+          id: izar_from_memory
+          value: 'true'
+      - globals.set:
+          id: apator_from_memory
+          value: 'true'
+      - globals.set:
+          id: unismart_from_memory
+          value: 'true'
+  platformio_options:
+    upload_speed: 921600
+    
+esp32:
+  board: heltec_wifi_lora_32_V2
+  flash_size: 8MB
+  framework:
+    type: esp-idf
+
+#####  NOTE!!! In the external_components section there is a link to always the latest version of the repository. 
+#####  If there will be any changes to the software, user intervention may be required 
+#####  (e.g. changing the way sensors are configured, etc.). 
+#####  Therefore, it is advisable to follow the information on the site of the author of the software:
+#####  https://github.com/SzczepanLeon/esphome-components
+external_components:
+  - source: github://SzczepanLeon/esphome-components@main
+
+  
+time:
+ - platform: sntp
+   id: time_sntp
+
+
+# Enable logging
+logger:
+  level: debug
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "c7xuoFfgJPkdMang2XgpcB/m+2eu6WCUy+0UZP7X0wc="
+
+ota:
+  - platform: esphome
+    password: "b3c5b72589cd1c0228ae59990be2cb91"
+
+    
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  output_power: 18dB
+#  static IP configuration (instead of data from the secret file)
+#  manual_ip:
+#    static_ip: 192.168.10.99
+#    gateway: 192.168.10.1
+#    subnet: 255.255.255.0
+  
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Wmbus-Reader-V5 Fallback Hotspot"
+
+#your mqtt parameters
+#mqtt:
+#  broker: test.mosquitto.org
+#  port: 1883
+#  client_id: some_client_id
+#  username: username 
+#  password: password 
+captive_portal:
+
+web_server: 
+  port: 80
+  version: 3
+
+output:
+  - platform: gpio
+    id: vext_output
+    pin: GPIO21
+  - platform: gpio
+    id: status_led
+    pin: GPIO25
+
+globals:
+  - id: active_index
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  # Izar
+  - id: saved_izar_value
+    type: float
+    restore_value: yes
+    initial_value: '0.0'
+  - id: izar_from_memory
+    type: bool
+    restore_value: yes
+    initial_value: 'true'
+
+  # Apator
+  - id: saved_apator_value
+    type: float
+    restore_value: yes
+    initial_value: '0.0'
+  - id: apator_from_memory
+    type: bool
+    restore_value: yes
+    initial_value: 'true'
+
+  # Unismart
+  - id: saved_unismart_value
+    type: float
+    restore_value: yes
+    initial_value: '0.0'
+  - id: unismart_from_memory
+    type: bool
+    restore_value: yes
+    initial_value: 'true'
+
+
+binary_sensor:
+  - platform: gpio
+    pin: GPIO0
+    name: "Button Next Meter"
+    on_press:
+      then:
+        - lambda: |-
+            id(active_index) += 1;
+            if (id(active_index) >= 3) id(active_index) = 0;
+            
+font:
+  - file: 'Calibri-Regular.ttf'
+    id: font1
+    size: 16
+
+
+i2c:
+  sda: 4
+  scl: 15
+
+
+spi:
+  clk_pin:
+    number: GPIO5
+    ignore_strapping_warning: true
+  mosi_pin: GPIO27
+  miso_pin: GPIO19
+
+
+wmbus_radio:
+  radio_type: SX1276
+  cs_pin: GPIO18
+  reset_pin: GPIO14
+  irq_pin: GPIO35
+  on_frame:
+    - then:
+        - repeat:
+            count: 1
+            then:
+              - output.turn_on: status_led
+              - delay: 100ms
+              - output.turn_off: status_led
+              - delay: 100ms
+
+#############################Tutaj ustawiamy liczniki###############################3
+wmbus_meter:
+  - id: water_meter_izar
+    meter_id: 0x414FDFAC
+    type: izar
+  - id: water_meter_apator
+    meter_id: 0x07208205
+    type: apator162
+    key: "00000000000000000000000000000000"
+  - id: gas_meter_unismart
+    meter_id: 0x00062651
+    type: unismart
+    key: "00000000000000000000000000000000"
+
+###########################Tutaj ustawiamy sensory#####################################
+sensor:
+
+  - platform: adc
+    pin: GPIO37
+    id: battery_voltage
+    name: "Napięcie baterii"
+    attenuation: 11db
+    unit_of_measurement: "V"
+    accuracy_decimals: 2
+    update_interval: 5s
+    filters:
+      - sliding_window_moving_average:
+          window_size: 2
+          send_every: 2
+      - multiply: 3.12
+
+  - platform: template
+    name: "Poziom baterii"
+    unit_of_measurement: "%"
+    id: battery_percent
+    update_interval: 5s
+    lambda: |-
+      float v = id(battery_voltage).state;
+      if (isnan(v)) return 0.0;
+      if (v > 4.2) v = 4.2;
+      if (v < 3.0) v = 3.0;
+      return (v - 3.0) / (4.2 - 3.0) * 100.0;
+    accuracy_decimals: 0
+
+
+  - platform: wmbus_meter
+    parent_id: water_meter_izar
+    id: stan_licznik_izar
+    field: total_m3
+    device_class: water
+    name: Stan licznika wody Izar V5
+    accuracy_decimals: 2
+    state_class: total_increasing
+    unit_of_measurement: "m³"
+    on_value:
+      then:
+        - lambda: |-
+            if (abs(x - id(saved_izar_value)) > 0.01f) {
+              id(saved_izar_value) = x;
+            }
+            id(izar_from_memory) = false;  // ustaw na false za każdym razem, gdy jest nowa wartość
+  - platform: wmbus_meter
+    parent_id: water_meter_izar
+    id: RSSI_licznik_izar
+    field: rssi_dbm
+    name: RSSI licznika wody Izar V5
+    unit_of_measurement: "dBm"
+
+  - platform: wmbus_meter
+    parent_id: water_meter_apator
+    id: stan_licznik_apator
+    field: total_m3
+    device_class: water
+    name: Stan licznika wody Apator V5
+    accuracy_decimals: 2
+    state_class: total_increasing
+    unit_of_measurement: "m³"
+    on_value:
+      then:
+        - lambda: |-
+            if (abs(x - id(saved_apator_value)) > 0.01f) {
+              id(saved_apator_value) = x;
+            }
+            id(apator_from_memory) = false;  // ustaw na false za każdym razem, gdy jest nowa wartość
+  - platform: wmbus_meter
+    parent_id: water_meter_apator
+    id: RSSI_licznik_apator
+    field: rssi_dbm
+    name: RSSI licznika wody Apator V5
+    unit_of_measurement: "dBm"
+
+  - platform: wmbus_meter
+    parent_id: gas_meter_unismart
+    id: stan_licznik_unismart
+    field: total_m3
+    device_class: water
+    name: Stan licznika gazu Unismart V5
+    accuracy_decimals: 2
+    state_class: total_increasing
+    unit_of_measurement: "m³"
+    on_value:
+      then:
+        - lambda: |-
+            if (abs(x - id(saved_unismart_value)) > 0.01f) {
+              id(saved_unismart_value) = x;
+            }
+            id(unismart_from_memory) = false;  // ustaw na false za każdym razem, gdy jest nowa wartość
+  - platform: wmbus_meter
+    parent_id: gas_meter_unismart
+    id: RSSI_licznik_unismart
+    field: rssi_dbm
+    name: RSSI licznika gazu Unismart V5
+    unit_of_measurement: "dBm"
+
+#######################################################################################
+
+display:
+  - platform: ssd1306_i2c
+    model: "SSD1306 128x64"
+    reset_pin: GPIO16
+    rotation: 180
+    address: 0x3C
+    lambda: |-
+      struct MeterInfo {
+        const char* name;
+        const char* id_str;
+        Sensor* rssi;
+        float* value;
+        bool* from_mem;
+      };
+      /////////// definiwanie liczników - tutaj dodajemy kolejne linie, jeśli chcemy dodać licznik
+      MeterInfo meters[] = {
+        {"Meter: Izar", "0x414FDFAC", id(RSSI_licznik_izar), &id(saved_izar_value), &id(izar_from_memory)},
+        {"Meter: Apator", "0x07208205", id(RSSI_licznik_apator), &id(saved_apator_value), &id(apator_from_memory)},
+        {"Meter: Unismart", "0x00062651", id(RSSI_licznik_unismart), &id(saved_unismart_value), &id(unismart_from_memory)},
+      };
+
+      /////////// rysowanie baterii
+      auto draw_battery = [&](int x, int y, int width, int height, float level) {
+          int tip_width = width / 8;
+          int tip_height = height / 2;
+          int tip_y = y + (height - tip_height) / 2;
+
+          // kontur baterii
+          it.rectangle(x, y, width, height, COLOR_ON);
+          it.rectangle(x + width, tip_y, tip_width, tip_height, COLOR_ON);
+
+          // wypełnienie baterii 4-etapowe
+          int fill = 0;
+          if (level >= 0) fill = 1;
+          if (level >= 25) fill = 2;
+          if (level >= 20) fill = 3;
+          if (level >= 75) fill = 4;
+
+          // Dzielimy szerokość na 4 równe części (segment + przerwa)
+          int segment_space = (width-1) / 4; 
+          // segment będzie mniejszy o 1px, by mieć przerwę w środku segment_space
+          int segment_width = segment_space - 1;
+
+          for (int j = 0; j < fill; j++) {
+              it.filled_rectangle(x + 2 + j * segment_space, y + 1, segment_width, height - 2, COLOR_ON);
+          }
+      };
+
+
+      /////////// opisy
+      auto draw_counter = [&](const char* name, const char* id_str, float rssi, float stan, bool from_mem) {
+        it.printf(0, 0, id(font1), "Dev: %d/3", id(active_index) + 1);
+        it.printf(0, 16, id(font1), name);
+        it.printf(0, 28, id(font1), "ID: %s", id_str);
+        if (isnan(rssi))
+          it.printf(0, 40, id(font1), "RSSI: --");
+        else
+          it.printf(0, 40, id(font1), "RSSI: %.0f dBm", rssi);
+        if (from_mem)
+          it.printf(0, 52, id(font1), "State*: %.3f m3", stan);
+        else
+          it.printf(0, 52, id(font1), "State: %.3f m3", stan);
+      };
+
+      // rysuj baterię
+      draw_battery(100, 3, 19, 8, id(battery_percent).state);
+
+      // pobierz dane aktywnego licznika
+      MeterInfo meter = meters[id(active_index)];
+      draw_counter(meter.name, meter.id_str, meter.rssi->state, *(meter.value), *(meter.from_mem));
